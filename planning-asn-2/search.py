@@ -1,5 +1,7 @@
+# LLM Copilot did helped with some parts of this assignment see below 
 import numpy as np
 import queue
+from collections import deque
 from game import BoardState, GameSimulator, Rules
 
 class Problem:
@@ -62,10 +64,8 @@ class GameStateProblem(Problem):
         pass a string as a parameter to alg, and then set:
             self.search_alg_fnc = self.your_method
         to indicate which algorithm you'd like to run.
-
-        TODO: You need to set self.search_alg_fnc here
         """
-        self.search_alg_fnc = None
+        self.search_alg_fnc = self.bfs_shortest_plan
 
     def get_actions(self, state: tuple):
         """
@@ -136,3 +136,48 @@ class GameStateProblem(Problem):
         return solution ## Solution is an ordered list of (s,a)
     """
 
+
+    def bfs_shortest_plan(self):
+        """
+        Breadth-first search algorithm.
+
+        Outputs:
+            A list of (state, action) pairs.
+        """
+        start = self.initial_state
+        if self.is_goal(start):
+            return [(start, None)]
+
+        # LLM Copilot suggested parts of these lines of code
+        q = deque([start])
+        parent = {start: None}
+        parent_action = {start: None}
+
+        visited = {start}
+
+        while q:
+            s = q.popleft()
+            actions = self.get_actions(s)
+            for a in actions:
+                s_next = self.execute(s, a)
+                if s_next in visited:
+                    continue
+                visited.add(s_next)
+                parent[s_next] = s
+                parent_action[s_next] = a
+                if self.is_goal(s_next):
+                    # Reconstruct path
+                    path = []
+                    cur = s_next
+                    path.append((cur, None))
+                    while parent[cur] is not None:
+                        prev = parent[cur]
+                        act = parent_action[cur]
+                        path.append((prev, act))
+                        cur = prev
+                    path.reverse()
+                    return path
+                q.append(s_next)
+        # End of all suggested code in this block 
+        
+        return [(start, None)]

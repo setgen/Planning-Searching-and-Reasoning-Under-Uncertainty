@@ -1,3 +1,5 @@
+# LLM Copilot did helped with some parts of this assignment see below 
+
 import numpy as np
 
 class BoardState:
@@ -34,10 +36,9 @@ class BoardState:
 
         Input: a tuple (col, row)
         Output: an integer in the interval [0, 55] inclusive
-
-        TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        col, row = cr
+        return int(row) * self.N_COLS + int(col)
 
     def decode_single_pos(self, n: int):
         """
@@ -45,10 +46,12 @@ class BoardState:
 
         Input: an integer in the interval [0, 55] inclusive
         Output: a tuple (col, row)
-
-        TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        n = int(n)
+        col = n % self.N_COLS
+        row = n // self.N_COLS
+
+        return (col, row)
 
     def is_termination_state(self):
         """
@@ -57,10 +60,15 @@ class BoardState:
 
         You can assume that `self.state` contains the current state of the board, so
         check whether self.state represents a termainal board state, and return True or False.
-        
-        TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        if not self.is_valid():
+          return False
+        white_ball = int(self.state[5])
+        black_ball = int(self.state[11])
+        _, w_row = self.decode_single_pos(white_ball)
+        _, b_row = self.decode_single_pos(black_ball)
+
+        return (w_row == self.N_ROWS - 1) or (b_row == 0)
 
     def is_valid(self):
         """
@@ -71,11 +79,38 @@ class BoardState:
         If we give you a self.state array of 12 arbitrary integers, this function should indicate whether
         it represents a valid board configuration.
 
-        Output: return True (if valid) or False (if not valid)
-        
-        TODO: You need to implement this.
+        Output: return True (if valid) or False (if not valid)        
         """
-        raise NotImplementedError("TODO: Implement this function")
+        max_cell_num = self.N_ROWS * self.N_COLS
+
+        # Check if cell values are on grid
+        for v in self.state:
+            if v < 0 or v >= max_cell_num:
+                return False
+
+        #Set up blocks and balls
+        white_blocks = [int(x) for x in self.state[0:5]]
+        white_ball = int(self.state[5])
+        black_blocks = [int(x) for x in self.state[6:11]]
+        black_ball = int(self.state[11])
+        
+        # Check correct num of blocks
+        if len(set(white_blocks)) != 5:
+            return False
+        if len(set(black_blocks)) != 5:
+            return False
+
+        # Ensure different locations
+        if set(white_blocks) & set(black_blocks):
+            return False
+
+        # Check ball locations
+        if white_ball not in set(white_blocks):
+            return False
+        if black_ball not in set(black_blocks):
+            return False
+
+        return True
 
 class Rules:
 
@@ -92,10 +127,34 @@ class Rules:
 
         Output: an iterable (set or list or tuple) of integers which indicate the encoded positions
             that piece_idx can move to during this turn.
-        
-        TODO: You need to implement this.
         """
-        raise NotImplementedError("TODO: Implement this function")
+        N_ROWS, N_COLS = board_state.N_ROWS, board_state.N_COLS
+        player_idx = 0 if piece_idx < 6 else 1
+        ball_idx = 5 if player_idx == 0 else 11
+
+        # Get the block's current pos
+        pos = int(board_state.state[piece_idx])
+        col, row = board_state.decode_single_pos(pos)
+
+        # If the block has the ball, it can't move
+        if int(board_state.state[ball_idx]) == pos:
+            return set()
+
+        # Get all the cells occupied by blocks
+        occupied_cells = set(int(x) for x in list(board_state.state[0:5]) + list(board_state.state[6:11]))
+
+        # All possible block moves
+        all_moves = [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]
+
+        moves = set()
+        for c, r in all_moves:
+            new_col, new_row = col + c, row + r
+            if 0 <= new_col < N_COLS and 0 <= new_row < N_ROWS:
+                enc = board_state.encode_single_pos((new_col, new_row))
+                if enc not in occupied_cells:
+                    moves.add(enc)
+
+        return moves
 
     @staticmethod
     def single_ball_actions(board_state, player_idx):
@@ -108,11 +167,76 @@ class Rules:
             - player_idx, either 0 or 1, to indicate which player's ball we are enumerating over
         
         Output: an iterable (set or list or tuple) of integers which indicate the encoded positions
-            that player_idx's ball can move to during this turn.
-        
-        TODO: You need to implement this.
+            that player_idx's ball can move to during this turn.        
         """
-        raise NotImplementedError("TODO: Implement this function")
+        assert player_idx in (0,1)
+        N_ROWS, N_COLS = board_state.N_ROWS, board_state.N_COLS
+        ball_idx = 5 if player_idx == 0 else 11
+        offset = 0 if player_idx == 0 else 6
+
+        # Get set of friendly blocks
+        friendly = [int(x) for x in board_state.state[offset:offset+5]]
+        friendly_set = set(friendly)
+        start = int(board_state.state[ball_idx])
+
+        # Get set of all blocks that occupy squares
+        occupied_blocks = set(int(x) for x in list(board_state.state[0:5]) + list(board_state.state[6:11]))
+
+        # LLM Copilot suggested parts of these lines of code
+
+        # Determine if the ball has a clear line of sight to target
+        def clear_los(a_enc, b_enc):
+            if a_enc == b_enc:
+                return False
+
+            a_col, a_row = board_state.decode_single_pos(a_enc)
+            b_col, b_row = board_state.decode_single_pos(b_enc)
+            diff_col = b_col - a_col
+            diff_row = b_row - a_row
+
+            # Check if same row, same column, or on the diagonal
+            if not (a_row == b_row or a_col == b_col or abs(diff_col) == abs(diff_row)):
+                return False
+
+            step_col = 0 if diff_col == 0 else (1 if diff_col > 0 else -1)
+            step_row = 0 if diff_row == 0 else (1 if diff_row > 0 else -1)
+            c, r = a_col + step_col, a_row + step_row
+            while (c, r) != (b_col, b_row):
+                enc = board_state.encode_single_pos((c, r))
+                if enc in occupied_blocks:
+                    return False
+                c += step_col
+                r += step_row
+            return True
+
+        # Friendly blocks with clear line of sight
+        adj = {u: set() for u in friendly}
+        for i in range(len(friendly)):
+            for j in range(i+1, len(friendly)):
+                u, v = friendly[i], friendly[j]
+                if clear_los(u, v):
+                    adj[u].add(v)
+                    adj[v].add(u)
+
+        # Look through friendly blocks and determine which are valid moves
+        reachable = set()
+        if start in adj:
+            q = [start]
+            seen = {start}
+            while q:
+                u = q.pop(0)
+                for v in adj[u]:
+                    if v not in seen:
+                        seen.add(v)
+                        q.append(v)
+                        reachable.add(v)
+        # Exclude the starting square
+        if start in reachable:
+            reachable.remove(start)
+
+        # End of all suggested code in this block 
+
+        return reachable
 
 class GameSimulator:
     """
@@ -168,11 +292,27 @@ class GameSimulator:
               integer on the interval [0, 5] inclusive. Given relative_idx and player_idx, the index for any
               piece in the boardstate can be obtained, so relative_idx is the index relative to current player's
               pieces. Pieces with relative index 0,1,2,3,4 are block pieces that like knights in chess, and
-              relative index 5 is the player's ball piece.
-            
-        TODO: You need to implement this.
+              relative index 5 is the player's ball piece.            
         """
-        raise NotImplementedError("TODO: Implement this function")
+        #if player_idx not in (0,1):
+        #    raise ValueError("player_idx must be 0 or 1")
+        if not self.game_state.is_valid():
+            return set()
+
+        actions = set()
+        offset = 0 if player_idx == 0 else 6
+
+        # Block moves
+        for rel in range(5):
+            piece_idx = offset + rel
+            for pos in Rules.single_piece_actions(self.game_state, piece_idx):
+                actions.add((rel, int(pos)))
+
+        # Ball moves
+        for pos in Rules.single_ball_actions(self.game_state, player_idx):
+            actions.add((5, int(pos)))
+
+        return actions
 
     def validate_action(self, action: tuple, player_idx: int):
         """
@@ -185,13 +325,40 @@ class GameSimulator:
 
         Output:
             - if the action is valid, return True
-            - if the action is not valid, raise ValueError
-        
-        TODO: You need to implement this.
+            - if the action is not valid, raise ValueError        
         """
-        if False:
-            raise ValueError("For each case that an action is not valid, specify the reason that the action is not valid in this ValueError.")
-        if True:
+        # Type and structure checks
+        if not isinstance(action, tuple) or len(action) != 2:
+            raise ValueError("Action must be a tuple (relative_idx, encoded_position)")
+        rel, pos = action
+        if not isinstance(rel, (int, np.integer)):
+            raise ValueError("relative_idx must be an integer in [0,5]")
+        if rel < 0 or rel > 5:
+            raise ValueError("relative_idx out of range [0,5]")
+        if not isinstance(pos, (int, np.integer)):
+            raise ValueError("encoded_position must be an integer")
+        if not (0 <= int(pos) < self.game_state.N_ROWS * self.game_state.N_COLS):
+            raise ValueError("encoded_position out of bounds")
+        if player_idx not in (0,1):
+            raise ValueError("player_idx must be 0 or 1")
+        if not self.game_state.is_valid():
+            raise ValueError("Current board configuration is invalid")
+
+        offset = 0 if player_idx == 0 else 6
+
+        if rel == 5:
+            legal_targets = Rules.single_ball_actions(self.game_state, player_idx)
+            if int(pos) not in legal_targets:
+                raise ValueError("Ball move is not legal from current holder")
+            return True
+        else:
+            piece_idx = offset + rel
+            ball_idx = offset + 5
+            if int(self.game_state.state[piece_idx]) == int(self.game_state.state[ball_idx]):
+                raise ValueError("Block cannot move while holding the ball")
+            legal_targets = Rules.single_piece_actions(self.game_state, piece_idx)
+            if int(pos) not in legal_targets:
+                raise ValueError("Block move is not a legal move to an empty square")
             return True
     
     def update(self, action: tuple, player_idx: int):
