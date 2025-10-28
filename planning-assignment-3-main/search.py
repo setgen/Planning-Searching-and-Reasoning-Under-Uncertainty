@@ -1,8 +1,12 @@
-# LLM Copilot did helped with some parts of this assignment see below 
+# I use LLM Copilot while completeing assignments, and therefore Copilot did helped with some parts of this assignment.
+# Code blocks where Copilot assisted from Assignment 2 remain unchaged, and blocks where Copilot assisted for Assignment
+# 3 are marked below.
+
 import numpy as np
 import queue
 from collections import deque
 from game import BoardState, GameSimulator, Rules
+import math
 
 class Problem:
     """
@@ -104,39 +108,6 @@ class GameStateProblem(Problem):
         offset_idx = p * 6
         return tuple((tuple( s[i] if i != offset_idx + k else v for i in range(len(s))), (p + 1) % 2))
 
-    ## TODO: Implement your search algorithm(s) here as methods of the GameStateProblem.
-    ##       You are free to specify parameters that your method may require.
-    ##       However, you must ensure that your method returns a list of (state, action) pairs, where
-    ##       the first state and action in the list correspond to the initial state and action taken from
-    ##       the initial state, and the last (s,a) pair has s as a goal state, and a=None, and the intermediate
-    ##       (s,a) pairs correspond to the sequence of states and actions taken from the initial to goal state.
-    ##
-    ## NOTE: Here is an example of the format:
-    ##       [(s1, a1),(s2, a2), (s3, a3), ..., (sN, aN)] where
-    ##          sN is an element of self.goal_state_set
-    ##          aN is None
-    ##          All sK for K=1...N are in the form (encoded_state, player_idx), where encoded_state is a tuple of 12 integers,
-    ##              effectively encoded_state is the result of tuple(BoardState.state)
-    ##          All aK for K=1...N are in the form (int, int)
-    ##
-    ## NOTE: The format of state is a tuple: (encoded_state, player_idx), where encoded_state is a tuple of 12 integers
-    ##       (mirroring the contents of BoardState.state), and player_idx is 0 or 1, indicating the player that is
-    ##       moving in this state.
-    ##       The format of action is a tuple: (relative_idx, position), where relative_idx the relative index into encoded_state
-    ##       with respect to player_idx, and position is the encoded position where the piece should move to with this action.
-    ## NOTE: self.get_actions will obtain the current actions available in current game state.
-    ## NOTE: self.execute acts like the transition function.
-    ## NOTE: Remember to set self.search_alg_fnc in set_search_alg above.
-    ## 
-    """ Here is an example:
-    
-    def my_snazzy_search_algorithm(self):
-        ## Some kind of search algorithm
-        ## ...
-        return solution ## Solution is an ordered list of (s,a)
-    """
-
-
     def bfs_shortest_plan(self):
         """
         Breadth-first search algorithm.
@@ -181,3 +152,113 @@ class GameStateProblem(Problem):
         # End of all suggested code in this block 
         
         return [(start, None)]
+
+    # LLM Copilot suggested or assisted with parts of this code block (lines 157-263)
+    def is_termination_state(self, state):
+        enc_state, _ = state
+        self.sim.game_state.state = np.array(enc_state)
+        self.sim.game_state.decode_state = self.sim.game_state.make_state()
+        return self.sim.game_state.is_termination_state()
+
+    def terminal_value(self, state, max_player_idx):
+        enc_state, _ = state
+        w_row = int(enc_state[5]) // 7
+        b_row = int(enc_state[11]) // 7
+        white_wins = (w_row == 7)
+        black_wins = (b_row == 0)
+        if white_wins or black_wins:
+            if max_player_idx == 0:
+                return math.inf if white_wins else -math.inf
+            else:
+                return math.inf if black_wins else -math.inf
+        return None
+
+    def heuristic(self, state, max_player_idx):
+        # A heursitic that takes into max_player's ball closeness to goal as well as
+        # how many open blocks it can pass to
+
+        # Evaluate ball closeness to goal
+        enc_state, _ = state
+        w_row = int(enc_state[5]) // 7
+        b_row = int(enc_state[11]) // 7
+        progress_white = w_row
+        progress_black = 7 - b_row
+        base = progress_white - progress_black
+
+        # Evaluate number of passing blocks
+        self.sim.game_state.state = np.array(enc_state)
+        self.sim.game_state.decode_state = self.sim.game_state.make_state()
+        moves = Rules.single_ball_actions(self.sim.game_state, max_player_idx)
+        opp_moves = Rules.single_ball_actions(self.sim.game_state, 1 - max_player_idx)
+        passes = (len(moves) - len(opp_moves)) * 0.1
+
+        white_val = base + passes
+        return white_val if max_player_idx == 0 else -white_val
+
+    def order_actions(self, state, actions, player_idx, max_player_idx):
+        # Try to make moves that advance ball first to help with alpha-beta pruning
+        def key(a):
+            rel, pos = a
+            row = pos // 7
+            if rel == 5:
+                advance = row if player_idx == 0 else (7 - row)
+                return (0, -advance, pos)
+            return (1, rel, pos)
+        return sorted(actions, key=key)
+
+    def adversarial_search_method(self, start_state, max_depth=4, max_player_idx=0):
+        transportation_table = {}  # The idea of using a transportation table was helped via a ChatGPT query about speeding up alpha-beta pruning
+
+        def minimax(state, depth, alpha, beta, maximizing):
+            terminal_value = self.terminal_value(state, max_player_idx)
+            if terminal_value is not None:
+                return None, terminal_value
+            if depth == 0:
+                return None, self.heuristic(state, max_player_idx)
+
+            actions = self.get_actions(state)
+            player_idx = state[1]
+            actions = self.order_actions(state, actions, player_idx, max_player_idx)
+
+            key = (state, depth, maximizing)
+            if key in transportation_table:
+                return transportation_table[key]
+
+            if maximizing:
+                best_value = -math.inf
+                best_action = None
+                for a in actions:
+                    s_next = self.execute(state, a)
+                    _, value = minimax(s_next, depth - 1, alpha, beta, not maximizing)
+                    if value > best_value:
+                        best_value, best_action = value, a
+                    alpha = max(alpha, value)
+                    if beta <= alpha:
+                        break
+                transportation_table[key] = (best_action, best_value)
+                return best_action, best_value
+            else:
+                best_value = math.inf
+                best_action = None
+                for a in actions:
+                    s_next = self.execute(state, a)
+                    _, value = minimax(s_next, depth - 1, alpha, beta, not maximizing)
+                    if value < best_value:
+                        best_value, best_action = value, a
+                    beta = min(beta, value)
+                    if beta <= alpha:
+                        break
+                transportation_table[key] = (best_action, best_value)
+                return best_action, best_value
+
+        maximizing = (start_state[1] == max_player_idx)
+        action, value = minimax(start_state, max_depth, -math.inf, math.inf, maximizing)
+
+        if action is None:
+            actions = list(self.get_actions(start_state))
+            if actions:
+                action = self.order_actions(start_state, actions, start_state[1], max_player_idx)[0]
+            else:
+                action = (0, start_state[0][0])
+        return action, value
+    # End of all suggested or assisted code in this block 

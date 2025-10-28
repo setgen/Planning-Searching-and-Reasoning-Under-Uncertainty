@@ -2,6 +2,97 @@
 
 import numpy as np
 
+class Player:
+    def __init__(self, policy_fnc):
+        self.policy_fnc = policy_fnc
+
+    def policy(self, decode_state):
+        pass
+
+class AdversarialSearchPlayer(Player):
+    def __init__(self, gsp, player_idx, max_depth=4):
+        """
+        You can customize the signature of the constructor above to suit your needs.
+        In this example, in the above parameters, gsp is a GameStateProblem, and
+        gsp.adversarial_search_method is a method of that class.  
+        """
+        super().__init__(gsp.adversarial_search_method)
+        self.gsp = gsp
+        self.b = BoardState()
+        self.player_idx = player_idx
+        self.max_depth = max_depth
+
+    def policy(self, decode_state):
+        """
+        Here, the policy of the player is to consider the current decoded game state
+        and then correctly encode it and provide any additional required parameters to the
+        assigned policy_fnc (which in this case is gsp.adversarial_search_method), and then
+        return the result of self.policy_fnc
+        Inputs:
+          - decoded_state is a 12-tuple of ordered pairs. For example:
+          (
+            (c1,r1),(c2,r2),(c3,r3),(c4,r4),(c5, r5),(c6,r6),
+            (c7,r7),(c8,r8),(c9,r9),(c10,r10),(c12,r12),(c12,r12),
+          )
+        Outputs:
+          - policy returns a tuple (action, value), where action is an action tuple
+          of the form (relative_idx, encoded_position), and value is a value.
+        NOTE: While value is not used by the game simulator, you may wish to use this value
+          when implementing your policy_fnc. The game simulator and the tests only call
+          policy (which wraps your policy_fnc), so you are free to define the inputs for policy_fnc.
+        """
+        encoded_state_tup = tuple( self.b.encode_single_pos(s) for s in decode_state )
+        state_tup = tuple((encoded_state_tup, self.player_idx))
+        return self.policy_fnc(state_tup, self.max_depth, self.player_idx)
+
+# LLM Copilot suggested or assisted with parts of this code block
+class RandomPlayer(Player):
+    def __init__(self, gsp, player_idx, seed=None):
+        super().__init__(None)
+        self.gsp = gsp
+        self.player_idx = player_idx
+        self.rng = random.Random(seed)
+        self._b = BoardState()
+
+    def policy(self, decode_state):
+        enc_state = tuple(self._b.encode_single_pos(s) for s in decode_state)
+        self.gsp.sim.game_state.state = np.array(enc_state)
+        self.gsp.sim.game_state.decode_state = self.gsp.sim.game_state.make_state()
+        actions = list(self.gsp.sim.generate_valid_actions(self.player_idx))
+        if not actions:
+            return (5, enc_state[5 if self.player_idx == 0 else 11]), 0.0
+        a = self.rng.choice(actions)
+        return a, 0.0
+
+class GreedyBallPlayer(Player):
+    def __init__(self, gsp, player_idx):
+        super().__init__(None)
+        self.gsp = gsp
+        self.player_idx = player_idx
+        self._b = BoardState()
+
+    def policy(self, decode_state):
+        enc_state = tuple(self._b.encode_single_pos(s) for s in decode_state)
+        self.gsp.sim.game_state.state = np.array(enc_state)
+        self.gsp.sim.game_state.decode_state = self.gsp.sim.game_state.make_state()
+        actions = list(self.gsp.sim.generate_valid_actions(self.player_idx))
+        if not actions:
+            return (5, enc_state[5 if self.player_idx == 0 else 11]), 0.0
+        def action_key(a):
+            rel, pos = a
+            c, r = self._b.decode_single_pos(pos)
+            if rel == 5:
+                score = r if self.player_idx == 0 else (self._b.N_ROWS - 1 - r)
+                return (0, -score, pos)
+            return (1, rel, pos)
+        actions.sort(key=action_key)
+        return actions[0], 0.0
+
+# Alias used in tests
+class PlayerWithAlgorithmB(GreedyBallPlayer):
+    pass       
+# End of all suggested or assisted code in this block 
+
 class BoardState:
     """
     Represents a state in the game
@@ -294,8 +385,6 @@ class GameSimulator:
               pieces. Pieces with relative index 0,1,2,3,4 are block pieces that like knights in chess, and
               relative index 5 is the player's ball piece.            
         """
-        #if player_idx not in (0,1):
-        #    raise ValueError("player_idx must be 0 or 1")
         if not self.game_state.is_valid():
             return set()
 
@@ -368,3 +457,4 @@ class GameSimulator:
         offset_idx = player_idx * 6 ## Either 0 or 6
         idx, pos = action
         self.game_state.update(offset_idx + idx, pos)
+        
