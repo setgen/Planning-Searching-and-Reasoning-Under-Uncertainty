@@ -1,3 +1,5 @@
+# LLM Copilot did helped with some parts of this assignment see below 
+
 import numpy as np
 
 class StateGenerator:
@@ -36,6 +38,37 @@ class StateGenerator:
         c = position - self.ncols * r
         return (c, r)
 
+# LLM Copilot suggested or assisted with parts of this code block
+# Helper function
+def observation_distribution(true_pos, state):
+    positions, (nrows, ncols) = state
+    cx, cy = true_pos
+    dist = np.zeros((nrows, ncols), dtype=float)
+
+    occupied = set(positions[1:])
+
+    center_prob = 0.6
+    neighbor_prob = 0.1
+    blocked_extra = 0.0
+
+    cardinals = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    for dc, dr in cardinals:
+        nx, ny = cx + dc, cy + dr
+        if 0 <= nx < ncols and 0 <= ny < nrows and (nx, ny) not in occupied:
+            dist[ny, nx] = neighbor_prob
+        else:
+            blocked_extra += neighbor_prob
+
+    center_prob += blocked_extra
+    if 0 <= cx < ncols and 0 <= cy < nrows:
+        dist[cy, cx] += center_prob
+
+    total = dist.sum()
+    if total > 0:
+        dist /= total
+    return dist
+# End of all suggested or assisted code in this block 
+
 def sample_observation(state):
     """
     Given a state, sample an observation from it. Specifically, the positions[1:] locations are
@@ -51,7 +84,20 @@ def sample_observation(state):
 
     NOTE: the array representing the distribution should have a shape of (nrows, ncols)
     """
-    pass
+    positions, (nrows, ncols) = state
+    true_pos = positions[0]
+
+    dist = observation_distribution(true_pos, state)
+
+    # LLM Copilot suggested or assisted with parts of this code block
+    # Sample from the distribution
+    flat = dist.ravel()
+    rng = np.random.default_rng()
+    idx = rng.choice(nrows * ncols, p=flat)
+    r = idx // ncols
+    c = idx % ncols
+    return (c, r), dist
+    # End of all suggested or assisted code in this block 
 
 def sample_transition(state, action):
     """
@@ -74,7 +120,25 @@ def sample_transition(state, action):
             - transition_probabilities is a 2D numpy array with shape (nrows, ncols) that accurately reflects
                 the probability of ending up at a certain position on the board given the action. 
     """
-    pass
+    positions, (nrows, ncols) = state
+    (c, r) = positions[0]
+    dc, dr = action
+
+    # LLM Copilot suggested or assisted with parts of this code block
+    new_c = c + dc
+    new_r = r + dr
+
+    trans = np.zeros((nrows, ncols), dtype=float)
+    occupied = set(positions[1:])
+
+    if not (0 <= new_c < ncols and 0 <= new_r < nrows):
+        return None, trans
+    if (new_c, new_r) in occupied:
+        return None, trans
+
+    trans[new_r, new_c] = 1.0
+    return (new_c, new_r), trans
+    # End of all suggested or assisted code in this block 
  
 def initialize_belief(initial_state, style="uniform"):
     """
@@ -95,10 +159,31 @@ def initialize_belief(initial_state, style="uniform"):
         onto the actual position on the piece).
     
     """
+    positions, (nrows, ncols) = initial_state
+    belief = np.zeros((nrows, ncols), dtype=float)
+
+    occupied = set(positions[1:])
+
+    # LLM Copilot suggested or assisted with parts of this code block
     if style == "uniform":
-        pass
+        for r in range(nrows):
+            for c in range(ncols):
+                if (c, r) not in occupied:
+                    belief[r, c] = 1.0
+        total = belief.sum()
+        if total > 0:
+            belief /= total
+        return belief
+
     if style == "dirac":
-        pass
+        c0, r0 = positions[0]
+        if 0 <= c0 < ncols and 0 <= r0 < nrows and (c0, r0) not in occupied:
+            belief[r0, c0] = 1.0
+        total = belief.sum()
+        if total > 0:
+            belief /= total
+        return belief
+    # End of all suggested or assisted code in this block 
 
 def belief_update(prior, observation, reference_state):
     """
@@ -112,7 +197,29 @@ def belief_update(prior, observation, reference_state):
     Returns:
         posterior: a 2D numpy array with shape (nrows, ncols)
     """
-    pass
+    positions, (nrows, ncols) = reference_state
+    obs_c, obs_r = observation
+
+    posterior = np.zeros_like(prior, dtype=float)
+
+    # LLM Copilot suggested or assisted with parts of this code block
+    for r in range(nrows):
+        for c in range(ncols):
+            if prior[r, c] <= 0.0:
+                continue
+            true_pos = (c, r)
+            dist = observation_distribution(true_pos, reference_state)
+            likelihood = dist[obs_r, obs_c]
+            if likelihood > 0.0:
+                posterior[r, c] = prior[r, c] * likelihood
+
+    total = posterior.sum()
+    if total > 0:
+        posterior /= total
+    else:
+        posterior = prior.copy()
+    return posterior
+    # End of all suggested or assisted code in this block 
 
 def belief_predict(prior, action, reference_state):
     """
@@ -128,7 +235,36 @@ def belief_predict(prior, action, reference_state):
     Returns:
         posterior: a 2D numpy array with shape (nrows, ncols)
     """
-    pass
+    positions, (nrows, ncols) = reference_state
+    dc, dr = action
+
+    posterior = np.zeros_like(prior, dtype=float)
+    occupied = set(positions[1:])
+
+    # LLM Copilot suggested or assisted with parts of this code block
+    for r in range(nrows):
+        for c in range(ncols):
+            p = prior[r, c]
+            if p <= 0.0:
+                continue
+
+            new_c = c + dc
+            new_r = r + dr
+
+            if not (0 <= new_c < ncols and 0 <= new_r < nrows):
+                continue
+            if (new_c, new_r) in occupied:
+                continue
+
+            posterior[new_r, new_c] += p
+
+    total = posterior.sum()
+    if total > 0:
+        posterior /= total
+    else:
+        posterior = prior.copy()
+    return posterior
+    # End of all suggested or assisted code in this block 
 
 if __name__ == "__main__":
     gen = StateGenerator()
